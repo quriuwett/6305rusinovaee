@@ -6,6 +6,9 @@ import shutil
 import json
 import numpy as np
 from PIL import Image
+import time
+import cv2
+
 
 def download_info(paintings, api_url):
     painting = choice(paintings)
@@ -14,14 +17,18 @@ def download_info(paintings, api_url):
     return info.json()
 
 def halftone(np_array):
-    return np.array(0.2126 * np_array[:,:,0] + 0.7152 * np_array[:,:,1] + 0.0722 * np_array[:,:,2]).astype(np.uint8)
+    start = time.time()
+    res = np.array(0.2126 * np_array[:,:,0] + 0.7152 * np_array[:,:,1] + 0.0722 * np_array[:,:,2]).astype(np.uint8)
+    print(f"Полутонирование: {time.time() - start} сек")
+    return res
 
 def save_np(directory, file_name, np_array):
     array_path = path.join(directory, file_name)
     image = Image.fromarray(np_array)
     image.save(array_path)
 
-def gauss(np_array):
+def gauss(np_array): 
+    start = time.time()
     core = np.array([
         [1,2,1],
         [2,4,2],
@@ -34,9 +41,12 @@ def gauss(np_array):
         for x in range(1,np_array.shape[1] - 1):
                 window = np_array[y-1:y+2, x-1:x+2] * core[:, :, np.newaxis]
                 np_result[y,x] = np.sum(window, axis=(0,1)) / np.sum(core)
-    return np.clip(np_result, 0, 255).astype(np.uint8)
+    res = np.clip(np_result, 0, 255).astype(np.uint8)
+    print(f"Гаусс: {time.time() - start} сек")
+    return res
 
 def sobel(np_array):
+    start = time.time()
     g_v = np.array([
         [-1,-2,-1],
         [0,0,0],
@@ -55,7 +65,9 @@ def sobel(np_array):
         for x in range(1,np_array.shape[1] - 1):
                 window = np_array[y-1:y+2, x-1:x+2]
                 np_result[y,x] = np.sqrt(np.sum((window * g_h)**2 + (window * g_v)**2))
-    return np.clip(np_result, 0, 255).astype(np.uint8)
+    res = np.clip(np_result, 0, 255).astype(np.uint8)
+    print(f"Собель: {time.time() - start} сек")
+    return res
 
 paintings = []
 api_url = 'https://collectionapi.metmuseum.org/public/collection/v1/objects/'
@@ -89,11 +101,20 @@ with open(info_path, 'w') as f:
     json.dump(info, f)
 
 np_image = np.array(Image.open(image_path).convert('RGB'))
-halftone_np_image = halftone(np_image)
-save_np(directory, 'halftone_image.jpg', halftone_np_image)
+cv2_image = cv2.imread(image_path)
 
-#gauss_np_image = gauss(np_image)
-#save_np(directory,'gauss_image.jpg', gauss_np_image)
+halftone_np_image = halftone(np_image)
+halftone_cv2_image = cv2.cvtColor(cv2_image, cv2.COLOR_BGR2GRAY)
+save_np(directory, 'halftone_image.jpg', halftone_np_image)
+cv2.imwrite(path.join(directory, 'cv2_halftone_image.jpg'), halftone_cv2_image)
+
+gauss_np_image = gauss(np_image)
+gauss_cv2_image = cv2.GaussianBlur(cv2_image, (3,3), 0)
+save_np(directory,'gauss_image.jpg', gauss_np_image)
+cv2.imwrite(path.join(directory, 'cv2_gauss_image.jpg'), gauss_cv2_image)
+
 
 sobel_np_image = sobel(np_image)
+canny_cv2_image = cv2.Canny(halftone_cv2_image, 100, 200)
 save_np(directory,'sobel_image.jpg', sobel_np_image)
+cv2.imwrite(path.join(directory, 'cv2_canny_image.jpg'), canny_cv2_image)
