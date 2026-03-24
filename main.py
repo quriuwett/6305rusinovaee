@@ -59,12 +59,12 @@ def sobel(np_array):
     ])
 
     np_array = halftone(np_array)
-    np_result = np.zeros_like(np_array)
+    np_result = np.zeros_like(np_array).astype(np.float64)
 
     for y in range(1, np_array.shape[0] - 1):
         for x in range(1,np_array.shape[1] - 1):
                 window = np_array[y-1:y+2, x-1:x+2]
-                np_result[y,x] = np.sqrt(np.sum((window * g_h)**2 + (window * g_v)**2))
+                np_result[y,x] = np.sqrt((np.sum(window * g_h))**2 + (np.sum(window * g_v))**2)
     res = np.clip(np_result, 0, 255).astype(np.uint8)
     print(f"Собель: {time.time() - start} сек")
     return res
@@ -115,6 +115,9 @@ cv2.imwrite(path.join(directory, 'cv2_gauss_image.jpg'), gauss_cv2_image)
 
 
 sobel_np_image = sobel(np_image)
-canny_cv2_image = cv2.Canny(halftone_cv2_image, 100, 200)
+sobel_cv2_image_x = cv2.Sobel(halftone_cv2_image, cv2.CV_64F, 1, 0, ksize=3)
+sobel_cv2_image_y = cv2.Sobel(halftone_cv2_image, cv2.CV_64F, 0, 1, ksize=3)
+sobel_cv2_image = cv2.magnitude(sobel_cv2_image_x, sobel_cv2_image_y)
+cv2_sobel = np.uint8(np.absolute(sobel_cv2_image))
 save_np(directory,'sobel_image.jpg', sobel_np_image)
-cv2.imwrite(path.join(directory, 'cv2_canny_image.jpg'), canny_cv2_image)
+cv2.imwrite(path.join(directory, 'cv2_sobel_image.jpg'), cv2_sobel)
