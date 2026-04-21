@@ -1,182 +1,84 @@
-import cv2
-import os
-from csv import DictReader
-from io import BytesIO
-from random import choice
-from typing import Dict, List
+import pandas as pd
 import numpy as np
-from numpy.typing import NDArray
-import time
-from requests import get
-from PIL import Image
+import matplotlib.pyplot as plt
 
-def measure_time(name: str):
-    def decorator(func):
-        def wrapper(*args, **kwargs):
-            start = time.time()
-            result = func(*args, **kwargs)
-            end = time.time()
-            print(f'Функция "{name}" выполнилась за {end - start} сек')
-            return result
-        return wrapper
-    return decorator
+def read_data(filepath, chunksize=10000):
+    cols = ['Medium', 'Object Begin Date', 'Object End Date']
+    for chunk in pd.read_csv(filepath, chunksize=chunksize, usecols=cols):
+        yield chunk
 
-class Artwork:
-    __slots__ = ['__image', '__metadata']
-
-    def __init__(self, metadata: Dict[str, str], image: NDArray[np.uint8]):
-        self.__metadata = metadata
-        self.__image = image
-
-    @property
-    def metadata(self) -> Dict[str, str]:
-        return self.__metadata
-
-    @property
-    def image(self) -> NDArray[np.uint8]:
-        return self.__image
-
-    @measure_time('Полутонирование')
-    def halftone(self) -> NDArray[np.uint8]:
-        res = (np.array(0.2126 * self.__image[:, :, 0]
-                       + 0.7152 * self.__image[:, :, 1]
-                       + 0.0722 * self.__image[:, :, 2])
-        .astype(np.uint8))
-        return res
-
-    @measure_time('Размытие по Гауссу')
-    def gauss(self) -> NDArray[np.uint8]:
-        core = np.array([
-            [1, 2, 1],
-            [2, 4, 2],
-            [1, 2, 1]
-        ])
-        np_result = np.zeros_like(self.__image)
-
-        for y in range(1, self.__image.shape[0] - 1):
-            for x in range(1, self.__image.shape[1] - 1):
-                window = self.__image[y - 1:y + 2, x - 1:x + 2] * core[:, :, np.newaxis]
-                np_result[y, x] = np.sum(window, axis=(0, 1)) / np.sum(core)
-        res = np.clip(np_result, 0, 255).astype(np.uint8)
-        return res
-
-    @measure_time('Выделение границ Собеля')
-    def sobel(self) -> NDArray[np.uint8]:
-        g_v = np.array([
-            [-1, -2, -1],
-            [0, 0, 0],
-            [1, 2, 1]
-        ])
-        g_h = np.array([
-            [-1, 0, 1],
-            [-2, 0, 2],
-            [-1, 0, 1]
-        ])
-
-        np_array = self.halftone()
-        np_result = np.zeros_like(np_array)
-
-        for y in range(1, np_array.shape[0] - 1):
-            for x in range(1, np_array.shape[1] - 1):
-                window = np_array[y - 1:y + 2, x - 1:x + 2]
-                np_result[y, x] = np.sqrt(np.sum((window * g_h) ** 2 + (window * g_v) ** 2))
-        res = np.clip(np_result, 0, 255).astype(np.uint8)
-        return res
-
-    def __add__(self, other: 'Artwork') -> 'Artwork':
-        h1, w1 = self.__image.shape[:2]
-        h2, w2 = other.__image.shape[:2]
+def filter_and_calculate(chunks):
+    for df in chunks:
+        df = df.dropna(subset=['Medium', 'Object Begin Date', 'Object End Date']).copy()
+        df['Object Begin Date'] = pd.to_numeric(df['Object Begin Date'])
+        df['Object End Date'] = pd.to_numeric(df['Object End Date'])
+        df = df.dropna()
         
-        target_w = max(w1, w2)
-        target_h = max(h1, h2)
-        target_size = (target_w, target_h)
+        df['Duration'] = df['Object End Date'] - df['Object Begin Date']
+        df['Duration_sq'] = df['Duration'] ** 2
+        yield df
 
-        img1_resized = cv2.resize(self.__image, target_size, interpolation=cv2.INTER_LANCZOS4)
-        img2_resized = cv2.resize(other.__image, target_size, interpolation=cv2.INTER_LANCZOS4)
+def aggregate_chunk(chunks):
+    for df in chunks:
+        agg = df.groupby(['Medium', 'Object Begin Date']).agg(
+            count=('Duration', 'count'),
+            sum_dur=('Duration', 'sum'),
+            sum_dur_sq=('Duration_sq', 'sum')
+        ).reset_index()
+        yield agg
 
-        combined = (img1_resized.astype(np.float32) + img2_resized.astype(np.float32)) / 2
-        
-        return Artwork(self.metadata, combined.astype(np.uint8))
+def global_reduce(pipeline):
+    return pd.concat(pipeline, ignore_index=True).groupby(['Medium', 'Object Begin Date'], as_index=False).sum()
 
-    def __str__(self) -> str:
-        return self.__metadata['title']
-
-
-class ImageProcessor:
-    __api_url = 'https://collectionapi.metmuseum.org/public/collection/v1/objects/'
-
-    def __init__(self, csv_path: str, save_directory: str):
-        self.__csv_path = csv_path
-        self.__save_directory = save_directory
-
-    def download_painting(self, name: str) -> Artwork:
-        print('Скачивание данных об изображении...')
-        paintings = []
-        with open(self.__csv_path, encoding='utf-8') as f:
-            reader = DictReader(f)
-            for m in reader:
-                if m['Classification'] == 'Paintings':
-                    paintings.append(m)
-
-        info = self.__download_info(paintings)
-        while info['primaryImage'] == '':
-            info = self.__download_info(paintings)
-
-
-        image = get(info['primaryImage']).content
-        np_image = np.array(Image.open(BytesIO(image)).convert('RGB'))
-        print('Скачивание завершено')
-        self.save_image(np_image, name)
-        return Artwork(info, np_image)
-
-    def __download_info(self, paintings: List[int]) -> Dict[str, str]:
-        painting = choice(paintings)
-        object_id = painting['Object ID']
-        info = get(self.__api_url + object_id)
-        return info.json()
-
-    def sobel(self, artwork: Artwork, save_name: str = 'sobel') -> None:
-        print('Применение фильтра Собеля...')
-        res = artwork.sobel()
-        print('Сохранение...')
-        self.save_image(res, save_name)
-        print(f'Изображение "{save_name}" сохранено')
-
-    def gauss(self, artwork: Artwork, save_name: str = 'gauss') -> None:
-        print('Применение размытия Гаусса...')
-        res = artwork.gauss()
-        print('Сохранение...')
-        self.save_image(res, save_name)
-        print(f'Изображение "{save_name}" сохранено')
-
-    def halftone(self, artwork: Artwork, save_name: str = 'halftone') -> None:
-        print('Полутонирование изображения...')
-        res = artwork.halftone()
-        print('Сохранение...')
-        self.save_image(res, save_name)
-        print(f'Изображение "{save_name}" сохранено')
-
-    def save_image(self, ndarray: NDArray[np.uint8], name: str) -> None:
-        path = os.path.join(self.__save_directory, f"{name}.jpg")
-        img = Image.fromarray(ndarray)
-        img.save(path)
-
-    
 def main():
-    CSV_FILE = 'MetObjects.csv'
-    SAVE_DIR = 'paintings'
+    filepath = 'MetObjects.csv'
 
-    processor = ImageProcessor(csv_path=CSV_FILE, save_directory=SAVE_DIR)
-    art = processor.download_painting('image')
+    pipeline = aggregate_chunk(filter_and_calculate(read_data(filepath)))
+    
+    final_data = global_reduce(pipeline)
 
-    processor.halftone(art, "grayscale")
-    processor.gauss(art, "blurred")
-    processor.sobel(art, "edges")
+    medium_stats = final_data.groupby('Medium').sum()
+    top_10 = medium_stats.nlargest(10, 'count').copy()
 
-    art1 = processor.download_painting('art1')
-    art2 = processor.download_painting('art2')
-    new_art = art1 + art2
-    processor.save_image(new_art.image, 'added')
+    n = top_10['count']
+    sum_x = top_10['sum_dur']
+    sum_x2 = top_10['sum_dur_sq']
 
-if __name__ == "__main__":
+    top_10['mean'] = sum_x / n
+    variance = (sum_x2 - (sum_x ** 2) / n) / (n - 1).clip(lower=1)
+    std = np.sqrt(variance.clip(lower=0))
+
+    top_10['ci_95'] = 1.96 * (std / np.sqrt(n))
+    top_10['pi_95'] = 1.96 * std
+
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 8))
+    plt.subplots_adjust(wspace=0.3)
+
+    x_pos = np.arange(len(top_10))
+    ax1.bar(x_pos, top_10['mean'], yerr=top_10['ci_95'], capsize=5, 
+            color='skyblue', alpha=0.8, label='Среднее (95% Доверительный интервал)')
+    ax1.errorbar(x_pos, top_10['mean'], yerr=top_10['pi_95'], fmt='none', 
+                 ecolor='red', alpha=0.4, label='95% Интервал рассеивания')
+    ax1.set_xticks(x_pos)
+    ax1.set_xticklabels(top_10.index, rotation=45, ha='right')
+    ax1.set_title('Top-10 материалов: Среднее время создания', fontweight='bold')
+    ax1.legend()
+
+    leader = top_10['mean'].idxmax()
+    timeline = final_data[final_data['Medium'] == leader].sort_values('Object Begin Date')
+    y_yearly = timeline['sum_dur'] / timeline['count']
+    y_rolling = y_yearly.rolling(window=15, min_periods=1).mean()
+
+    ax2.scatter(timeline['Object Begin Date'], y_yearly, alpha=0.3, s=15, color='gray', label='Среднее по году')
+    ax2.plot(timeline['Object Begin Date'], y_rolling, color='firebrick', linewidth=2.5, label='Скользящее среднее')
+
+    ax2.set_title(f'Динамика времени создания: {leader}', fontweight='bold')
+    ax2.set_xlabel('Год начала')
+    ax2.legend(loc='upper left')
+    ax2.grid(True, alpha=0.3)
+
+    plt.show()
+
+if __name__ == '__main__':
     main()
