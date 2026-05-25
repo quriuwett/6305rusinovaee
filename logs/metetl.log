@@ -1,0 +1,4 @@
+2026-05-20 19:09:34,389 - metetl - INFO - [__main__.py:10] - Программа MetETL успешно запущена.
+2026-05-20 19:09:34,397 - metetl - INFO - [data_to_download.py:10] - Подготовка метаданных из C:\Users\HP\Desktop\MetObjects.csv
+2026-05-20 19:09:41,812 - metetl - INFO - [data_to_download.py:42] - Файл .\data.json успешно создан. Найдено объектов: 0
+2026-05-20 19:09:41,837 - metetl - INFO - [__main__.py:15] - Программа успешно завершила свою работу.

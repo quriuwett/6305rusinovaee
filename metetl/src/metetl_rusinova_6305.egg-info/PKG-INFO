@@ -1,0 +1,9 @@
+Metadata-Version: 2.4
+Name: metetl-rusinova-6305
+Version: 0.2.0
+Requires-Dist: pandas
+Requires-Dist: numpy
+Requires-Dist: matplotlib
+Requires-Dist: pillow
+Requires-Dist: aiohttp
+Requires-Dist: aiofiles

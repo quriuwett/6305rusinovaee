@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "metetl-rusinova-6305-010302D"
+version = "0.2.2"
+dependencies = [
+    "pandas", "numpy", "matplotlib", "pillow", "aiohttp", "aiofiles"
+]
+
+[project.scripts]
+metetl = "metetl.__main__:main" 

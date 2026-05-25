@@ -1,0 +1,32 @@
+{
+    "version": 1,
+    "disable_existing_loggers": false,
+    "formatters": {
+        "file_formatter": {
+            "format": "%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s"
+        },
+        "console_formatter": {
+            "format": "%(levelname)s: %(message)s"
+        }
+    },
+    "handlers": {
+        "console_handler": {
+            "class": "logging.StreamHandler",
+            "level": "INFO",
+            "formatter": "console_formatter",
+            "stream": "ext://sys.stdout"
+        },
+        "file_handler": {
+            "class": "logging.FileHandler",
+            "level": "DEBUG",
+            "mode": "w",
+            "formatter": "file_formatter",
+            "filename": "./logs/metetl.log",
+            "encoding": "utf-8"
+        }
+    },
+    "root": {
+        "level": "INFO",
+        "handlers": ["console_handler", "file_handler"]
+    }
+}

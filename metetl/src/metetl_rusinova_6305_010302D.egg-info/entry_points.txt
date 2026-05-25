@@ -1,0 +1,2 @@
+[console_scripts]
+metetl = metetl.__main__:main
