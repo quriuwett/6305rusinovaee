@@ -94,14 +94,19 @@ class Artwork:
         img1_resized = cv2.resize(self.__image, target_size, interpolation=cv2.INTER_LANCZOS4)
         img2_resized = cv2.resize(other.__image, target_size, interpolation=cv2.INTER_LANCZOS4)
 
+        return img1_resized, img2_resized
+
     def __add__(self, other: 'Artwork') -> 'Artwork':
         img1, img2 = self._resize_to_max(other)
         combined = (img1.astype(np.float32) + img2.astype(np.float32)) / 2
-        return Artwork(self.metadata, combined.astype(np.uint8))
+        new_meta = {**self.__metadata, 'title': f"Смесь: {self.__metadata.get('title', 'Art1')} + {other.metadata.get('title', 'Art2')}"}
+        return Artwork(new_meta, combined.astype(np.uint8))
 
     def __sub__(self, other: 'Artwork') -> 'Artwork':
         img1, img2 = self._resize_to_max(other)
         diff = np.abs(img1.astype(np.int16) - img2.astype(np.int16))
+        new_meta = {**self.__metadata, 'title': f"Разность: {self.__metadata.get('title', 'Art1')} - {other.metadata.get('title', 'Art2')}"}
+        return Artwork(new_meta, diff.astype(np.uint8))
 
     def __str__(self) -> str:
         return self.__metadata['title']
@@ -168,7 +173,7 @@ class ImageProcessor:
 
     
 def main():
-    CSV_FILE = 'MetObjects.csv'
+    CSV_FILE = 'C:\\Users\\HP\\Desktop\\MetObjects.csv'
     SAVE_DIR = 'paintings'
 
     processor = ImageProcessor(csv_path=CSV_FILE, save_directory=SAVE_DIR)
@@ -180,8 +185,13 @@ def main():
 
     art1 = processor.download_painting('art1')
     art2 = processor.download_painting('art2')
-    new_art = art1 + art2
-    processor.save_image(new_art.image, 'added')
+    added_art = art1 + art2
+    processor.save_image(added_art.image, 'added')
+
+    subbed_art = art1 - art2
+    processor.save_image(subbed_art.image, 'subbed')
+
+    
 
 if __name__ == "__main__":
     main()
