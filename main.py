@@ -83,7 +83,7 @@ class Artwork:
         res = np.clip(np_result, 0, 255).astype(np.uint8)
         return res
 
-    def __add__(self, other: 'Artwork') -> 'Artwork':
+    def _resize_to_max(self, other: 'Artwork'):
         h1, w1 = self.__image.shape[:2]
         h2, w2 = other.__image.shape[:2]
         
@@ -94,9 +94,14 @@ class Artwork:
         img1_resized = cv2.resize(self.__image, target_size, interpolation=cv2.INTER_LANCZOS4)
         img2_resized = cv2.resize(other.__image, target_size, interpolation=cv2.INTER_LANCZOS4)
 
-        combined = (img1_resized.astype(np.float32) + img2_resized.astype(np.float32)) / 2
-        
+    def __add__(self, other: 'Artwork') -> 'Artwork':
+        img1, img2 = self._resize_to_max(other)
+        combined = (img1.astype(np.float32) + img2.astype(np.float32)) / 2
         return Artwork(self.metadata, combined.astype(np.uint8))
+
+    def __sub__(self, other: 'Artwork') -> 'Artwork':
+        img1, img2 = self._resize_to_max(other)
+        diff = np.abs(img1.astype(np.int16) - img2.astype(np.int16))
 
     def __str__(self) -> str:
         return self.__metadata['title']
